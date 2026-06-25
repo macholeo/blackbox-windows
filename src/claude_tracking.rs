@@ -24,8 +24,14 @@ pub fn encode_project_path(path: &str) -> String {
 }
 
 /// Check if a process is still running (same pattern as daemon.rs stale PID detection).
-fn is_process_running(pid: u64) -> bool {
-    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), None).is_ok()
+/// Returns `None` when the platform cannot determine liveness, so callers do
+/// not treat unsupported platforms as "definitely ended".
+fn is_process_running(pid: u64) -> Option<bool> {
+    match crate::platform::is_process_alive(pid as u32) {
+        crate::platform::Liveness::Running => Some(true),
+        crate::platform::Liveness::NotRunning => Some(false),
+        crate::platform::Liveness::Unsupported => None,
+    }
 }
 
 /// Read all session files from a sessions directory.
@@ -221,9 +227,11 @@ pub fn poll_claude_sessions_with_paths(
     for session_id in &active_session_ids {
         let still_running = active_pids
             .get(session_id)
-            .is_some_and(|&pid| is_process_running(pid));
+            .and_then(|&pid| is_process_running(pid));
 
-        if !still_running {
+        // If the platform cannot determine liveness, leave the session open.
+        // Do not fabricate a "not running" result.
+        if still_running == Some(false) {
             let ended_at = chrono::Utc::now().to_rfc3339();
 
             // Try to get turn count from conversation log

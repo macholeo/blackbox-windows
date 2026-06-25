@@ -31,6 +31,31 @@ jobs:
       - name: cargo test
         run: cargo test --verbose
 
+  windows-check:
+    name: windows compile substrate
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo check --locked
+        run: cargo check --locked
+
+      - name: cargo test --lib --locked
+        run: cargo test --locked --lib
+
+      - name: cargo test compile --locked
+        run: cargo test --locked --tests --no-run
+
+      - name: cargo test ai tracking integration --locked
+        run: cargo test --locked --test ai_tracking_integration_test
+
+      - name: cargo test claude tracking --locked
+        run: cargo test --locked --test claude_tracking_test
+
   clippy:
     name: clippy
     runs-on: ubuntu-latest

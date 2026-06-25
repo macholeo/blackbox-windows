@@ -15,6 +15,7 @@ pub mod git_ops;
 pub mod llm;
 pub mod output;
 pub mod perf_review;
+pub mod platform;
 pub mod poller;
 pub mod query;
 pub mod repo_scanner;

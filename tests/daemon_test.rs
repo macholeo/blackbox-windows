@@ -28,6 +28,7 @@ fn test_is_daemon_running_no_file() {
     assert!(result.is_none());
 }
 
+#[cfg(unix)]
 #[test]
 fn test_is_daemon_running_stale_pid() {
     let tmp = TempDir::new().unwrap();
@@ -58,6 +59,7 @@ fn test_stop_when_not_running() {
 /// running poll_interval_secs = 7200 in polling mode, the stale poll at
 /// `now - 25min` would land in Yellow under the default's 1800s threshold
 /// while the daemon's real 7200s threshold says Green.
+#[cfg(unix)]
 #[test]
 fn status_uses_persisted_poll_interval_over_reader_config() {
     use blackbox::daemon::HealthIndicator;
@@ -104,6 +106,7 @@ fn status_uses_persisted_poll_interval_over_reader_config() {
 }
 
 /// Integration test using CLI binary — needs env vars for subprocess
+#[cfg(unix)]
 #[test]
 fn test_start_stop_integration() {
     let tmp = TempDir::new().unwrap();
@@ -180,6 +183,7 @@ fn create_test_repo(path: &Path) -> git2::Repository {
 }
 
 /// E2E: daemon discovers repo, detects new commit, records to DB
+#[cfg(unix)]
 #[test]
 #[ignore] // slow -- run with --ignored
 fn test_e2e_daemon_records_commit() {

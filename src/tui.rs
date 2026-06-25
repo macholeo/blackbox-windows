@@ -114,10 +114,14 @@ impl App {
     /// Check if daemon is running via PID file, falling back to launchd.
     pub fn refresh_daemon_status(&mut self) {
         self.daemon_running = match crate::config::data_dir() {
-            Ok(data_dir) => crate::daemon::is_daemon_running(&data_dir)
-                .ok()
-                .flatten()
-                .is_some(),
+            Ok(data_dir) => match crate::daemon::is_daemon_running(&data_dir) {
+                Ok(Some(_)) => true,
+                Ok(None) => false,
+                Err(e) => {
+                    self.error = Some(format!("Daemon status error: {e}"));
+                    false
+                }
+            },
             Err(_) => false,
         } || crate::doctor::is_launchd_running().is_some();
         self.last_refresh = Instant::now();

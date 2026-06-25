@@ -469,9 +469,10 @@ fn maybe_send_daily_notification(config: &Config, conn: &Connection) {
 }
 
 pub fn run_poll_loop(mut config: Config) -> anyhow::Result<()> {
-    // Register SIGHUP handler — sets atomic flag, checked each loop iteration
+    // Register reload handler — on Unix this installs SIGHUP; on Windows it
+    // is a no-op in W1 so the polling loop can still compile and run.
     let reload_requested = Arc::new(AtomicBool::new(false));
-    signal_hook::flag::register(signal_hook::consts::SIGHUP, Arc::clone(&reload_requested))?;
+    crate::platform::register_reload_flag(Arc::clone(&reload_requested))?;
 
     let db_path = config::data_dir()?.join("blackbox.db");
     let conn = db::open_db(&db_path)?;

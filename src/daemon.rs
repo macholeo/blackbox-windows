@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::config::Config;
 use crate::output::OutputFormat;
+use crate::platform::{self, Liveness, Signal};
 use crate::poller;
 
 #[derive(Debug, PartialEq, Eq, serde::Serialize)]
@@ -38,12 +39,15 @@ pub fn is_daemon_running(data_dir: &Path) -> anyhow::Result<Option<u32>> {
     }
     let pid_str = std::fs::read_to_string(&path)?;
     let pid: u32 = pid_str.trim().parse()?;
-    match nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), None) {
-        Ok(_) => Ok(Some(pid)),
-        Err(_) => {
+    match platform::is_process_alive(pid) {
+        Liveness::Running => Ok(Some(pid)),
+        Liveness::NotRunning => {
             // Stale PID file -- process is dead, clean up
             std::fs::remove_file(&path)?;
             Ok(None)
+        }
+        Liveness::Unsupported => {
+            anyhow::bail!("Daemon process liveness is not supported on Windows in W1")
         }
     }
 }
@@ -53,42 +57,22 @@ pub fn start_daemon(config: Config, data_dir: &Path) -> anyhow::Result<()> {
         anyhow::bail!("Daemon already running (PID {})", pid);
     }
 
-    let pid_path = pid_file_path(data_dir);
-    std::fs::create_dir_all(data_dir)?;
-
-    let log_path = data_dir.join("blackbox.log");
-
-    let daemonize = daemonize::Daemonize::new()
-        .pid_file(&pid_path)
-        .working_directory("/")
-        .stdout(std::fs::File::create(&log_path)?)
-        .stderr(std::fs::File::create(data_dir.join("blackbox.err.log"))?);
-
-    match daemonize.start() {
-        Ok(()) => {
-            // We're in the child (daemon) process now
-            env_logger::Builder::from_default_env()
-                .filter_level(log::LevelFilter::Info)
-                .init();
-            log::info!("Daemon started (PID {})", std::process::id());
-            if let Err(e) = poller::run_poll_loop(config) {
-                log::error!("Poll loop error: {}", e);
-            }
-            Ok(())
+    platform::start_daemon(data_dir, move || {
+        env_logger::Builder::from_default_env()
+            .filter_level(log::LevelFilter::Info)
+            .init();
+        log::info!("Daemon started (PID {})", std::process::id());
+        if let Err(e) = poller::run_poll_loop(config) {
+            log::error!("Poll loop error: {}", e);
         }
-        Err(e) => {
-            anyhow::bail!("Failed to daemonize: {}", e);
-        }
-    }
+        Ok(())
+    })
 }
 
 pub fn stop_daemon(data_dir: &Path) -> anyhow::Result<()> {
     match is_daemon_running(data_dir)? {
         Some(pid) => {
-            nix::sys::signal::kill(
-                nix::unistd::Pid::from_raw(pid as i32),
-                nix::sys::signal::Signal::SIGTERM,
-            )?;
+            platform::send_signal(pid, Signal::Terminate)?;
             // Remove PID file
             let path = pid_file_path(data_dir);
             if path.exists() {
@@ -135,10 +119,7 @@ pub fn run_foreground(config: Config, data_dir: &Path) -> anyhow::Result<()> {
 pub fn reload_daemon(data_dir: &Path) -> anyhow::Result<()> {
     match is_daemon_running(data_dir)? {
         Some(pid) => {
-            nix::sys::signal::kill(
-                nix::unistd::Pid::from_raw(pid as i32),
-                nix::sys::signal::Signal::SIGHUP,
-            )?;
+            platform::send_signal(pid, Signal::Reload)?;
             println!("Reloading config (PID {})", pid);
         }
         None => println!("Daemon not running"),
@@ -619,5 +600,27 @@ mod tests {
         let _guard = PidGuard::new(&nested).unwrap();
         let pid_path = pid_file_path(&nested);
         assert!(pid_path.exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn is_daemon_running_does_not_fake_liveness_on_windows() {
+        // W1 contract: unsupported process liveness must not be silently
+        // converted into "not running", and we must not delete a PID file
+        // just because we cannot prove the process is alive.
+        let dir = tempfile::tempdir().unwrap();
+        let pid_file = pid_file_path(dir.path());
+        std::fs::write(&pid_file, "999999").unwrap();
+
+        let result = is_daemon_running(dir.path());
+        assert!(
+            result.is_err(),
+            "expected unsupported error, got {:?}",
+            result
+        );
+        assert!(
+            pid_file.exists(),
+            "PID file must not be removed when liveness is unsupported"
+        );
     }
 }

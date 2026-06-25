@@ -107,6 +107,9 @@ fn test_poll_sessions_dedup() {
     assert_eq!(count, 1);
 }
 
+// Windows W1 returns Liveness::Unsupported, so detecting a dead PID is a
+// Unix-specific platform contract test.
+#[cfg(unix)]
 #[test]
 fn test_poll_sessions_marks_ended_when_pid_dead() {
     let tmp = TempDir::new().unwrap();
@@ -146,6 +149,7 @@ fn test_poll_sessions_marks_ended_when_pid_dead() {
     assert!(ended.is_some(), "Session should be marked as ended");
 }
 
+#[cfg(unix)]
 #[test]
 fn test_poll_sessions_counts_turns() {
     let tmp = TempDir::new().unwrap();
