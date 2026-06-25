@@ -33,6 +33,33 @@ blackbox setup
 blackbox today
 ```
 
+## Windows Quick Start
+
+Build the release binary:
+
+```powershell
+cargo build --release --locked
+```
+
+The binary is at `target\release\blackbox.exe`.
+
+```powershell
+.\target\release\blackbox.exe init `
+  --watch-dirs "C:\path\to\projects" `
+  --poll-interval 30
+
+.\target\release\blackbox.exe start
+.\target\release\blackbox.exe status
+.\target\release\blackbox.exe today
+.\target\release\blackbox.exe standup
+.\target\release\blackbox.exe stop
+```
+
+- `start` launches a normal user-level background process; no administrator permission is required.
+- Configuration and database are stored in the Windows application-data directory (`%APPDATA%\blackbox`).
+- Deleting the Blackbox application-data directory resets local data — back it up first if needed.
+- `reload`, `install`, `uninstall`, Windows Service, and autostart are not supported on Windows.
+
 ## Commands
 
 | Command | Description |
