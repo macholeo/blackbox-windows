@@ -47,7 +47,9 @@ pub fn is_daemon_running(data_dir: &Path) -> anyhow::Result<Option<u32>> {
             Ok(None)
         }
         Liveness::Unsupported => {
-            anyhow::bail!("Daemon process liveness is not supported on Windows in W1")
+            // Cannot determine liveness (e.g., access denied to protected
+            // process). Assume running to avoid deleting a valid PID file.
+            Ok(Some(pid))
         }
     }
 }
@@ -604,23 +606,37 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn is_daemon_running_does_not_fake_liveness_on_windows() {
-        // W1 contract: unsupported process liveness must not be silently
-        // converted into "not running", and we must not delete a PID file
-        // just because we cannot prove the process is alive.
+    fn nonexistent_pid_is_stale_and_cleaned_up() {
+        // A PID file with a nonexistent PID should be detected as stale
+        // and cleaned up automatically.
         let dir = tempfile::tempdir().unwrap();
         let pid_file = pid_file_path(dir.path());
-        std::fs::write(&pid_file, "999999").unwrap();
+        std::fs::write(&pid_file, "99999999").unwrap();
 
-        let result = is_daemon_running(dir.path());
+        let result = is_daemon_running(dir.path()).unwrap();
+        assert!(result.is_none(), "stale PID should return None, got {:?}", result);
         assert!(
-            result.is_err(),
-            "expected unsupported error, got {:?}",
-            result
+            !pid_file.exists(),
+            "stale PID file should be removed"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn current_process_pid_reports_running() {
+        let dir = tempfile::tempdir().unwrap();
+        let pid_file = pid_file_path(dir.path());
+        std::fs::write(&pid_file, std::process::id().to_string()).unwrap();
+
+        let result = is_daemon_running(dir.path()).unwrap();
+        assert_eq!(
+            result,
+            Some(std::process::id()),
+            "current process PID should report running"
         );
         assert!(
             pid_file.exists(),
-            "PID file must not be removed when liveness is unsupported"
+            "PID file must not be removed when process is alive"
         );
     }
 }
